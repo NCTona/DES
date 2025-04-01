@@ -364,7 +364,7 @@ class DESFileTransferApp:
                 self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
                 messagebox.showinfo("Thành công", "Gửi file thành công!")
             else:
-                self.log_message(f"Lỗi từ server: {response.status_code} - {response.text}")
+                self.log_message(f"Lỗi từ server: {response.status_code}")
                 messagebox.showerror("Lỗi", f"Không thể gửi file: {response.status_code}")
         except requests.exceptions.Timeout:
             self.log_message("Lỗi: Quá thời gian gửi file")
