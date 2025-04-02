@@ -6,12 +6,11 @@ import time
 import shutil
 from flask import Flask, request, send_file, abort
 import requests
-import random
 
 class DESFileTransferApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("DES File Encryption/Transfer/Decryption with RSA")
+        self.root.title("DES File Encryption/Transfer/Decryption")
         self.root.geometry("1000x800")
 
         # Biến cấu hình
@@ -20,8 +19,6 @@ class DESFileTransferApp:
         self.port = 5000
         self.receive_host = f"http://localhost:{self.port}"
         self.buffer_size = 4096
-        self.public_key = None
-        self.private_key = None
 
         # Khởi tạo Flask app
         self.flask_app = Flask(__name__)
@@ -29,9 +26,6 @@ class DESFileTransferApp:
 
         # Tạo giao diện
         self.create_widgets()
-
-        # Tạo cặp khóa RSA
-        self.generate_rsa_keys()
 
         # Khởi động server Flask
         self.start_server()
@@ -56,21 +50,6 @@ class DESFileTransferApp:
             if os.path.exists(file_path):
                 return send_file(file_path, as_attachment=True)
             return abort(404, "File not found")
-
-        @self.flask_app.route('/public_key', methods=['GET'])
-        def get_public_key():
-            e, n = self.public_key
-            return {"public_key": f"{e},{n}"}, 200
-
-        @self.flask_app.route('/key', methods=['POST'])
-        def receive_key():
-            encrypted_key = int(request.json.get("encrypted_key"))
-            try:
-                des_key = self.decrypt(self.private_key, encrypted_key)
-                self.log_message(f"Đã nhận và giải mã khóa DES: {des_key}")
-                return {"message": "Key received"}, 200
-            except Exception as e:
-                return {"error": str(e)}, 400
 
     def notify_file_received(self, filename, temp_path):
         dialog = tk.Toplevel(self.root)
@@ -196,7 +175,7 @@ class DESFileTransferApp:
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(3, weight=1)
 
-        # DES permutation tables (giữ nguyên)
+        # DES permutation tables
         self.IP = [
             58, 50, 42, 34, 26, 18, 10, 2,
             60, 52, 44, 36, 28, 20, 12, 4,
@@ -351,6 +330,7 @@ class DESFileTransferApp:
             messagebox.showerror("Lỗi", "Vui lòng chọn file hợp lệ trước khi mở")
             return
         try:
+            # Kiểm tra nếu file có đuôi .des
             if file_path.lower().endswith('.des'):
                 key_hex = self.key_entry.get().upper()
                 if len(key_hex) != 16 or not all(c in '0123456789ABCDEF' for c in key_hex):
@@ -359,32 +339,38 @@ class DESFileTransferApp:
                 with open(file_path, 'rb') as f_in:
                     file_data = f_in.read()
                     if len(file_data) % 8 != 0:
-                        raise ValueError("File mã hóa không hợp lệ")
+                        raise ValueError("File mã hóa không hợp lệ (kích thước không chia hết cho 8)")
+                    # Hiển thị mã hex của file .des trước khi giải mã
                     hex_content = file_data.hex().upper()
                     self.log_message(f"Mã hex của file {file_path} trước khi giải mã:")
                     self.log_message(hex_content)
+                    # Giải mã DES mà không lưu file
                     decrypted_content = b""
                     for i in range(0, len(file_data), 8):
                         chunk = file_data[i:i + 8]
                         chunk_hex = chunk.hex().upper()
                         decrypted_hex = self.des_decrypt_block(chunk_hex, subkeys)
                         decrypted_bytes = bytes.fromhex(decrypted_hex)
-                        if i + 8 == len(file_data):
+                        if i + 8 == len(file_data):  # Khối cuối, loại bỏ padding
                             decrypted_bytes = self.unpad_data(decrypted_bytes)
                         decrypted_content += decrypted_bytes
+                    # Chuyển nội dung giải mã thành text và hiển thị
                     text_content = decrypted_content.decode('utf-8')
                     self.log_message(f"Nội dung file {file_path} sau khi giải mã DES (text): {text_content}")
             else:
+                # Thử đọc file như văn bản trước
                 try:
                     with open(file_path, 'r', encoding='utf-8') as f:
                         content = f.read()
                     self.log_message(f"Nội dung file {file_path} (text): {content}")
                 except UnicodeDecodeError:
+                    # Nếu không phải file văn bản, đọc dưới dạng nhị phân
                     with open(file_path, 'rb') as f:
                         binary_content = f.read()
                     hex_content = binary_content.hex().upper()
                     self.log_message(f"Nội dung file {file_path} (hex):")
                     self.log_message(hex_content)
+                    # Thử giải mã hex thành text
                     try:
                         text_content = bytes.fromhex(hex_content).decode('utf-8')
                         self.log_message(f"Nội dung file {file_path} sau khi giải mã hex (text):")
@@ -477,102 +463,6 @@ class DESFileTransferApp:
         if pad_len > 8 or pad_len == 0:
             return data
         return data[:-pad_len]
-
-    # RSA Implementation
-    def is_prime(self, n):
-        if n < 2:
-            return False
-        if n == 2:
-            return True
-        if n % 2 == 0:
-            return False
-        for _ in range(5):
-            a = random.randrange(2, n - 1)
-            if pow(a, n - 1, n) != 1:
-                return False
-        return True
-
-    def generate_prime(self, min_value, max_value):
-        prime = random.randrange(min_value, max_value)
-        while not self.is_prime(prime):
-            prime = random.randrange(min_value, max_value)
-        return prime
-
-    def mod_inverse(self, e, phi):
-        def extended_gcd(a, b):
-            if a == 0:
-                return b, 0, 1
-            gcd, x1, y1 = extended_gcd(b % a, a)
-            x = y1 - (b // a) * x1
-            y = x1
-            return gcd, x, y
-        gcd, x, _ = extended_gcd(e, phi)
-        if gcd != 1:
-            raise ValueError("Không tồn tại nghịch đảo modulo")
-        return x % phi
-
-    def generate_rsa_keys(self):
-        # Tăng kích thước p và q để n đủ lớn (2^63 đến 2^64)
-        p = self.generate_prime(2**63, 2**64 - 1)
-        q = self.generate_prime(2**63, 2**64 - 1)
-        while p == q:
-            q = self.generate_prime(2**63, 2**64 - 1)
-        n = p * q
-        phi = (p - 1) * (q - 1)
-        e = 65537
-        while phi % e == 0 or not self.is_prime(e):
-            e += 2
-        d = self.mod_inverse(e, phi)
-        self.public_key = (e, n)
-        self.private_key = (d, n)
-        self.log_message(f"Public Key: (e={e}, n={n})")
-        self.log_message(f"Private Key: (d={d}, n={n})")
-
-    def encrypt(self, public_key, message):
-        e, n = public_key
-        # Chuyển chuỗi hex trực tiếp thành số thay vì encode UTF-8
-        m = int(message, 16)  # Giả sử message là chuỗi hex như "183457799B3CDFF2"
-        if m >= n:
-            raise ValueError(f"Dữ liệu {m} quá lớn so với modulus n={n}")
-        c = pow(m, e, n)
-        return c
-
-    def decrypt(self, private_key, ciphertext):
-        d, n = private_key
-        m = pow(ciphertext, d, n)
-        # Chuyển số về chuỗi hex 16 ký tự
-        hex_str = hex(m)[2:].upper().zfill(16)
-        return hex_str
-
-    def fetch_public_key_from_receiver(self):
-        try:
-            response = requests.get(f"{self.send_host}/public_key")
-            if response.status_code == 200:
-                e, n = map(int, response.json().get("public_key").split(","))
-                self.public_key = (e, n)
-                self.log_message(f"Đã nhận khóa công khai từ bên nhận: {self.public_key}")
-        except Exception as e:
-            self.log_message(f"Lỗi khi lấy khóa công khai: {str(e)}")
-            messagebox.showerror("Lỗi", "Không thể lấy khóa công khai")
-
-    def send_encrypted_key(self):
-        des_key = self.key_entry.get().upper()
-        if not self.public_key:
-            self.fetch_public_key_from_receiver()
-        if self.public_key:
-            try:
-                encrypted_key = self.encrypt(self.public_key, des_key)
-                response = requests.post(
-                    f"{self.send_host}/key",
-                    json={"encrypted_key": str(encrypted_key)}
-                )
-                if response.status_code == 200:
-                    self.log_message("Đã gửi khóa DES mã hóa thành công")
-                else:
-                    self.log_message(f"Lỗi khi gửi khóa: {response.status_code}")
-            except Exception as e:
-                self.log_message(f"Lỗi khi gửi khóa: {str(e)}")
-                messagebox.showerror("Lỗi", f"Không thể gửi khóa: {str(e)}")
 
     def encrypt_file(self):
         input_file = self.file_path_entry.get()
@@ -704,6 +594,7 @@ class DESFileTransferApp:
 
         temp_output_file = input_file + ".des"
         try:
+            # Mã hóa file
             subkeys = self.generate_subkeys(key_hex)
             with open(input_file, 'rb') as f_in, open(temp_output_file, 'wb') as f_out:
                 self.log_message(f"Bắt đầu mã hóa file: {input_file}")
@@ -722,6 +613,7 @@ class DESFileTransferApp:
                 elapsed = time.time() - start_time
                 self.log_message(f"Đã mã hóa xong: {input_file} -> {temp_output_file}")
 
+            # Gửi file mã hóa
             upload_url = f"{self.send_host}/upload"
             file_name = os.path.basename(temp_output_file)
             file_size = os.path.getsize(temp_output_file)
@@ -735,12 +627,11 @@ class DESFileTransferApp:
                 speed = file_size / (1024 * elapsed) if elapsed > 0 else 0
                 self.log_message(f"Đã gửi xong file {file_name} ({file_size} bytes)")
                 self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
-                self.send_encrypted_key()
                 messagebox.showinfo("Thành công", "Mã hóa và gửi file thành công!")
             else:
                 self.log_message(f"Lỗi từ server: {response.status_code}")
                 messagebox.showerror("Lỗi", f"Không thể gửi file: {response.status_code}")
-            os.remove(temp_output_file)
+            os.remove(temp_output_file)  # Xóa file tạm sau khi gửi
         except Exception as e:
             self.log_message(f"Lỗi khi mã hóa và gửi: {str(e)}")
             messagebox.showerror("Lỗi", f"Không thể mã hóa và gửi file: {str(e)}")
