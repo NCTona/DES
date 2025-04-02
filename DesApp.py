@@ -15,13 +15,13 @@ class DESFileTransferApp:
         self.root.geometry("1000x800")
 
         # Biến cấu hình
-        self.key = "183457799B3CDFF2"  # Khóa DES mặc định
+        self.key = "183457799B3CDFF2"
         self.send_host = ""
         self.port = 5000
         self.receive_host = f"http://localhost:{self.port}"
         self.buffer_size = 4096
-        self.public_key = None  # Khóa công khai RSA
-        self.private_key = None  # Khóa bí mật RSA
+        self.public_key = None
+        self.private_key = None
 
         # Khởi tạo Flask app
         self.flask_app = Flask(__name__)
@@ -396,7 +396,7 @@ class DESFileTransferApp:
             self.log_message(f"Lỗi khi xử lý file: {str(e)}")
             messagebox.showerror("Lỗi", f"Không thể xử lý file: {str(e)}")
 
-    # DES Implementation (giữ nguyên)
+    # DES Implementation
     def hex_to_bin(self, hex_str, pad=64):
         return bin(int(hex_str, 16))[2:].zfill(pad)
 
@@ -512,35 +512,37 @@ class DESFileTransferApp:
         return x % phi
 
     def generate_rsa_keys(self):
-        p = self.generate_prime(100, 1000)
-        q = self.generate_prime(100, 1000)
+        # Tăng kích thước p và q để n đủ lớn (2^63 đến 2^64)
+        p = self.generate_prime(2**63, 2**64 - 1)
+        q = self.generate_prime(2**63, 2**64 - 1)
         while p == q:
-            q = self.generate_prime(100, 1000)
+            q = self.generate_prime(2**63, 2**64 - 1)
         n = p * q
         phi = (p - 1) * (q - 1)
-        e = 3
+        e = 65537
         while phi % e == 0 or not self.is_prime(e):
             e += 2
         d = self.mod_inverse(e, phi)
         self.public_key = (e, n)
         self.private_key = (d, n)
-        self.log_message(f"Public Key: {self.public_key}")
-        self.log_message(f"Private Key: {self.private_key}")
+        self.log_message(f"Public Key: (e={e}, n={n})")
+        self.log_message(f"Private Key: (d={d}, n={n})")
 
     def encrypt(self, public_key, message):
         e, n = public_key
-        m = int.from_bytes(message.encode(), 'big')
+        # Chuyển chuỗi hex trực tiếp thành số thay vì encode UTF-8
+        m = int(message, 16)  # Giả sử message là chuỗi hex như "183457799B3CDFF2"
         if m >= n:
-            raise ValueError("Dữ liệu quá lớn so với modulus n")
+            raise ValueError(f"Dữ liệu {m} quá lớn so với modulus n={n}")
         c = pow(m, e, n)
         return c
 
     def decrypt(self, private_key, ciphertext):
         d, n = private_key
         m = pow(ciphertext, d, n)
-        byte_length = (m.bit_length() + 7) // 8
-        m_bytes = m.to_bytes(byte_length, 'big')
-        return m_bytes.decode('utf-8')
+        # Chuyển số về chuỗi hex 16 ký tự
+        hex_str = hex(m)[2:].upper().zfill(16)
+        return hex_str
 
     def fetch_public_key_from_receiver(self):
         try:
@@ -677,7 +679,7 @@ class DESFileTransferApp:
                 self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
                 messagebox.showinfo("Thành công", "Gửi file thành công!")
             else:
-                self.log_message(f"Lỗi - Lỗi từ server: {response.status_code}")
+                self.log_message(f"Lỗi từ server: {response.status_code}")
                 messagebox.showerror("Lỗi", f"Không thể gửi file: {response.status_code}")
         except requests.exceptions.Timeout:
             self.log_message("Lỗi: Quá thời gian gửi file")
@@ -733,7 +735,7 @@ class DESFileTransferApp:
                 speed = file_size / (1024 * elapsed) if elapsed > 0 else 0
                 self.log_message(f"Đã gửi xong file {file_name} ({file_size} bytes)")
                 self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
-                self.send_encrypted_key()  # Gửi khóa DES đã mã hóa bằng RSA
+                self.send_encrypted_key()
                 messagebox.showinfo("Thành công", "Mã hóa và gửi file thành công!")
             else:
                 self.log_message(f"Lỗi từ server: {response.status_code}")
