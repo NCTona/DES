@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext
 import threading
 import os
 import time
+import shutil
 from flask import Flask, request, send_file, abort
 import requests
 
@@ -30,7 +31,6 @@ class DESFileTransferApp:
         self.start_server()
 
     def setup_flask_routes(self):
-        """Thiết lập các route cho Flask API"""
         @self.flask_app.route('/upload', methods=['POST'])
         def upload_file():
             if 'file' not in request.files:
@@ -52,30 +52,72 @@ class DESFileTransferApp:
             return abort(404, "File not found")
 
     def notify_file_received(self, filename, temp_path):
-        response = messagebox.askyesno(
-            "File Received",
-            f"Đã nhận được file: {filename}\nBạn có muốn lưu file này không?"
-        )
-        if response:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("File Received")
+        dialog.geometry("400x200")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text=f"Đã nhận được file: {filename}").pack(pady=10)
+        ttk.Label(dialog, text="Bạn muốn làm gì với file này?").pack(pady=5)
+
+        def save_file():
             output_file = filedialog.asksaveasfilename(
                 initialfile=filename,
                 title="Lưu file nhận được"
             )
             if output_file:
                 try:
-                    os.rename(temp_path, output_file)
+                    shutil.move(temp_path, output_file)
                     self.log_message(f"Đã lưu file: {output_file}")
                     self.file_path_entry.delete(0, tk.END)
                     self.file_path_entry.insert(0, output_file)
                 except Exception as e:
                     self.log_message(f"Lỗi khi lưu file: {str(e)}")
                     messagebox.showerror("Lỗi", f"Không thể lưu file: {str(e)}")
-            else:
+            dialog.destroy()
+
+        def decrypt_and_save():
+            output_file = filedialog.asksaveasfilename(
+                initialfile=filename[:-4] if filename.endswith('.des') else filename,
+                title="Lưu file giải mã"
+            )
+            if output_file:
+                try:
+                    key_hex = self.key_entry.get().upper()
+                    if len(key_hex) != 16 or not all(c in '0123456789ABCDEF' for c in key_hex):
+                        raise ValueError("Khóa phải là chuỗi hex 16 ký tự")
+                    subkeys = self.generate_subkeys(key_hex)
+                    with open(temp_path, 'rb') as f_in, open(output_file, 'wb') as f_out:
+                        file_data = f_in.read()
+                        if len(file_data) % 8 != 0:
+                            raise ValueError("File mã hóa không hợp lệ")
+                        for i in range(0, len(file_data), 8):
+                            chunk = file_data[i:i+8]
+                            chunk_hex = chunk.hex().upper()
+                            decrypted_hex = self.des_decrypt_block(chunk_hex, subkeys)
+                            decrypted_bytes = bytes.fromhex(decrypted_hex)
+                            if i + 8 == len(file_data):
+                                decrypted_bytes = self.unpad_data(decrypted_bytes)
+                            f_out.write(decrypted_bytes)
+                    self.log_message(f"Đã giải mã và lưu file: {output_file}")
+                    self.file_path_entry.delete(0, tk.END)
+                    self.file_path_entry.insert(0, output_file)
+                    os.remove(temp_path)
+                except Exception as e:
+                    self.log_message(f"Lỗi khi giải mã: {str(e)}")
+                    messagebox.showerror("Lỗi", f"Không thể giải mã file: {str(e)}")
+            dialog.destroy()
+
+        def discard_file():
+            if os.path.exists(temp_path):
                 os.remove(temp_path)
-                self.log_message(f"Đã hủy lưu file: {filename}")
-        else:
-            os.remove(temp_path)
             self.log_message(f"Đã từ chối lưu file: {filename}")
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Lưu", command=save_file).pack(side="left", padx=10, pady=10)
+        ttk.Button(dialog, text="Nhận và Giải mã", command=decrypt_and_save).pack(side="left", padx=10, pady=10)
+        ttk.Button(dialog, text="Hủy", command=discard_file).pack(side="left", padx=10, pady=10)
 
     def start_server(self):
         def run_flask():
@@ -114,6 +156,7 @@ class DESFileTransferApp:
         self.file_path_entry = ttk.Entry(file_frame, width=70)
         self.file_path_entry.grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(file_frame, text="Chọn file", command=self.select_file).grid(row=0, column=2, padx=5)
+        ttk.Button(file_frame, text="Mở file", command=self.open_file).grid(row=0, column=3, padx=5)
 
         action_frame = ttk.Frame(main_frame)
         action_frame.grid(row=2, column=0, sticky="ew", pady=(0, 15))
@@ -121,6 +164,7 @@ class DESFileTransferApp:
         ttk.Button(action_frame, text="Mã hóa File", command=self.encrypt_file).pack(side="left", padx=5)
         ttk.Button(action_frame, text="Gửi File", command=self.send_file).pack(side="left", padx=5)
         ttk.Button(action_frame, text="Giải mã File", command=self.decrypt_file).pack(side="left", padx=5)
+        ttk.Button(action_frame, text="Mã hóa và Gửi", command=self.encrypt_and_send_file).pack(side="left", padx=5)
 
         log_frame = ttk.LabelFrame(main_frame, text="Nhật ký hoạt động", padding="10")
         log_frame.grid(row=3, column=0, sticky="nsew")
@@ -280,6 +324,64 @@ class DESFileTransferApp:
             self.file_path_entry.insert(0, file_path)
             self.log_message(f"Đã chọn file: {file_path}")
 
+    def open_file(self):
+        file_path = self.file_path_entry.get()
+        if not file_path or not os.path.exists(file_path):
+            messagebox.showerror("Lỗi", "Vui lòng chọn file hợp lệ trước khi mở")
+            return
+        try:
+            # Kiểm tra nếu file có đuôi .des
+            if file_path.lower().endswith('.des'):
+                key_hex = self.key_entry.get().upper()
+                if len(key_hex) != 16 or not all(c in '0123456789ABCDEF' for c in key_hex):
+                    raise ValueError("Khóa phải là chuỗi hex 16 ký tự")
+                subkeys = self.generate_subkeys(key_hex)
+                with open(file_path, 'rb') as f_in:
+                    file_data = f_in.read()
+                    if len(file_data) % 8 != 0:
+                        raise ValueError("File mã hóa không hợp lệ (kích thước không chia hết cho 8)")
+                    # Hiển thị mã hex của file .des trước khi giải mã
+                    hex_content = file_data.hex().upper()
+                    self.log_message(f"Mã hex của file {file_path} trước khi giải mã:")
+                    self.log_message(hex_content)
+                    # Giải mã DES mà không lưu file
+                    decrypted_content = b""
+                    for i in range(0, len(file_data), 8):
+                        chunk = file_data[i:i + 8]
+                        chunk_hex = chunk.hex().upper()
+                        decrypted_hex = self.des_decrypt_block(chunk_hex, subkeys)
+                        decrypted_bytes = bytes.fromhex(decrypted_hex)
+                        if i + 8 == len(file_data):  # Khối cuối, loại bỏ padding
+                            decrypted_bytes = self.unpad_data(decrypted_bytes)
+                        decrypted_content += decrypted_bytes
+                    # Chuyển nội dung giải mã thành text và hiển thị
+                    text_content = decrypted_content.decode('utf-8')
+                    self.log_message(f"Nội dung file {file_path} sau khi giải mã DES (text): {text_content}")
+            else:
+                # Thử đọc file như văn bản trước
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    self.log_message(f"Nội dung file {file_path} (text): {content}")
+                except UnicodeDecodeError:
+                    # Nếu không phải file văn bản, đọc dưới dạng nhị phân
+                    with open(file_path, 'rb') as f:
+                        binary_content = f.read()
+                    hex_content = binary_content.hex().upper()
+                    self.log_message(f"Nội dung file {file_path} (hex):")
+                    self.log_message(hex_content)
+                    # Thử giải mã hex thành text
+                    try:
+                        text_content = bytes.fromhex(hex_content).decode('utf-8')
+                        self.log_message(f"Nội dung file {file_path} sau khi giải mã hex (text):")
+                        self.log_message(text_content)
+                    except (ValueError, UnicodeDecodeError):
+                        self.log_message("Không thể giải mã hex thành text.")
+            self.log_message(f"Đã xử lý file: {file_path}")
+        except Exception as e:
+            self.log_message(f"Lỗi khi xử lý file: {str(e)}")
+            messagebox.showerror("Lỗi", f"Không thể xử lý file: {str(e)}")
+
     # DES Implementation
     def hex_to_bin(self, hex_str, pad=64):
         return bin(int(hex_str, 16))[2:].zfill(pad)
@@ -298,7 +400,6 @@ class DESFileTransferApp:
         return ''.join(str(int(x) ^ int(y)) for x, y in zip(a, b))
 
     def generate_subkeys(self, key_hex):
-        """Tạo 16 subkey từ khóa hex"""
         if len(key_hex) != 16 or not all(c in '0123456789ABCDEF' for c in key_hex.upper()):
             raise ValueError("Khóa phải là chuỗi hex 16 ký tự")
         key_bin = self.hex_to_bin(key_hex)
@@ -368,14 +469,11 @@ class DESFileTransferApp:
         if not input_file:
             messagebox.showerror("Lỗi", "Vui lòng chọn file trước khi mã hóa")
             return
-
         key_hex = self.key_entry.get().upper()
         if len(key_hex) != 16 or not all(c in '0123456789ABCDEF' for c in key_hex):
             messagebox.showerror("Lỗi", "Khóa phải là chuỗi hex 16 ký tự")
             return
-
         output_file = input_file + ".des"
-
         try:
             subkeys = self.generate_subkeys(key_hex)
             with open(input_file, 'rb') as f_in, open(output_file, 'wb') as f_out:
@@ -398,6 +496,8 @@ class DESFileTransferApp:
                 self.log_message(f"Tổng kích thước: {bytes_processed} bytes")
                 self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
             messagebox.showinfo("Thành công", "Mã hóa file thành công!")
+            self.file_path_entry.delete(0, tk.END)
+            self.file_path_entry.insert(0, output_file)
         except Exception as e:
             self.log_message(f"Lỗi khi mã hóa: {str(e)}")
             messagebox.showerror("Lỗi", f"Không thể mã hóa file: {str(e)}")
@@ -414,7 +514,6 @@ class DESFileTransferApp:
             messagebox.showerror("Lỗi", "Khóa phải là chuỗi hex 16 ký tự")
             return
         output_file = input_file[:-4] if input_file.endswith('.des') else input_file + ".dec"
-
         try:
             subkeys = self.generate_subkeys(key_hex)
             with open(input_file, 'rb') as f_in, open(output_file, 'wb') as f_out:
@@ -439,6 +538,8 @@ class DESFileTransferApp:
                 self.log_message(f"Tổng kích thước: {bytes_processed} bytes")
                 self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
             messagebox.showinfo("Thành công", "Giải mã file thành công!")
+            self.file_path_entry.delete(0, tk.END)
+            self.file_path_entry.insert(0, output_file)
         except Exception as e:
             self.log_message(f"Lỗi khi giải mã: {str(e)}")
             messagebox.showerror("Lỗi", f"Không thể giải mã file: {str(e)}")
@@ -448,24 +549,19 @@ class DESFileTransferApp:
         if not input_file:
             messagebox.showerror("Lỗi", "Vui lòng chọn file trước khi gửi")
             return
-
         self.send_host = self.send_host_entry.get()
         if not self.send_host or not self.send_host.startswith("http"):
-            messagebox.showerror("Lỗi", "Send URL (Ngrok) phải là URL hợp lệ (http:// hoặc https://)")
+            messagebox.showerror("Lỗi", "Send URL phải là URL hợp lệ (http:// hoặc https://)")
             return
-
         try:
             upload_url = f"{self.send_host}/upload"
             file_name = os.path.basename(input_file)
             file_size = os.path.getsize(input_file)
-
             self.log_message(f"Bắt đầu gửi file tới {upload_url}")
             start_time = time.time()
-
             with open(input_file, 'rb') as f:
                 files = {'file': (file_name, f, 'application/octet-stream')}
                 response = requests.post(upload_url, files=files, timeout=30)
-
             if response.status_code == 200:
                 elapsed = time.time() - start_time
                 speed = file_size / (1024 * elapsed) if elapsed > 0 else 0
@@ -481,6 +577,66 @@ class DESFileTransferApp:
         except requests.exceptions.RequestException as e:
             self.log_message(f"Lỗi khi gửi file: {str(e)}")
             messagebox.showerror("Lỗi", f"Không thể gửi file: {str(e)}")
+
+    def encrypt_and_send_file(self):
+        input_file = self.file_path_entry.get()
+        if not input_file:
+            messagebox.showerror("Lỗi", "Vui lòng chọn file trước khi mã hóa và gửi")
+            return
+        key_hex = self.key_entry.get().upper()
+        if len(key_hex) != 16 or not all(c in '0123456789ABCDEF' for c in key_hex):
+            messagebox.showerror("Lỗi", "Khóa phải là chuỗi hex 16 ký tự")
+            return
+        self.send_host = self.send_host_entry.get()
+        if not self.send_host or not self.send_host.startswith("http"):
+            messagebox.showerror("Lỗi", "Send URL phải là URL hợp lệ (http:// hoặc https://)")
+            return
+
+        temp_output_file = input_file + ".des"
+        try:
+            # Mã hóa file
+            subkeys = self.generate_subkeys(key_hex)
+            with open(input_file, 'rb') as f_in, open(temp_output_file, 'wb') as f_out:
+                self.log_message(f"Bắt đầu mã hóa file: {input_file}")
+                start_time = time.time()
+                bytes_processed = 0
+                while True:
+                    chunk = f_in.read(8)
+                    if not chunk:
+                        break
+                    chunk = self.pad_data(chunk)
+                    chunk_hex = chunk.hex().upper()
+                    encrypted_hex = self.des_encrypt_block(chunk_hex, subkeys)
+                    encrypted_bytes = bytes.fromhex(encrypted_hex)
+                    f_out.write(encrypted_bytes)
+                    bytes_processed += len(chunk)
+                elapsed = time.time() - start_time
+                self.log_message(f"Đã mã hóa xong: {input_file} -> {temp_output_file}")
+
+            # Gửi file mã hóa
+            upload_url = f"{self.send_host}/upload"
+            file_name = os.path.basename(temp_output_file)
+            file_size = os.path.getsize(temp_output_file)
+            self.log_message(f"Bắt đầu gửi file tới {upload_url}")
+            start_time = time.time()
+            with open(temp_output_file, 'rb') as f:
+                files = {'file': (file_name, f, 'application/octet-stream')}
+                response = requests.post(upload_url, files=files, timeout=30)
+            if response.status_code == 200:
+                elapsed = time.time() - start_time
+                speed = file_size / (1024 * elapsed) if elapsed > 0 else 0
+                self.log_message(f"Đã gửi xong file {file_name} ({file_size} bytes)")
+                self.log_message(f"Thời gian: {elapsed:.2f} giây ({speed:.2f} KB/s)")
+                messagebox.showinfo("Thành công", "Mã hóa và gửi file thành công!")
+            else:
+                self.log_message(f"Lỗi từ server: {response.status_code}")
+                messagebox.showerror("Lỗi", f"Không thể gửi file: {response.status_code}")
+            os.remove(temp_output_file)  # Xóa file tạm sau khi gửi
+        except Exception as e:
+            self.log_message(f"Lỗi khi mã hóa và gửi: {str(e)}")
+            messagebox.showerror("Lỗi", f"Không thể mã hóa và gửi file: {str(e)}")
+            if os.path.exists(temp_output_file):
+                os.remove(temp_output_file)
 
 if __name__ == "__main__":
     root = tk.Tk()

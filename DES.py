@@ -280,7 +280,8 @@ if __name__ == "__main__":
         "123",  # Độ dài lẻ (3)
         "1234",  # Độ dài chẵn ngắn (4)
         "0123D56789ABCDE8",  # Độ dài 8 byte (16 ký tự)
-        "ABCDEF0123456789ABCDEF"  # Độ dài lớn hơn 8 byte
+        "ABCDEF0123456789ABCDEF",  # Độ dài lớn hơn 8 byte
+        "3B849AFB89074EAF8D5C465AB9836066697B60DCE605FF453363154DFDCC211D344F2898401447FD6CF4FF2F2F9654BD"
     ]
 
     for plaintext in test_cases:
