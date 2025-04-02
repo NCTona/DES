@@ -133,6 +133,18 @@ class DESFileTransferApp:
         config_frame = ttk.LabelFrame(main_frame, text="Cấu hình", padding="10")
         config_frame.grid(row=0, column=0, sticky="ew", pady=(0, 15))
 
+        file_frame = ttk.LabelFrame(main_frame, text="File", padding="10")
+        file_frame.grid(row=1, column=0, sticky="ew", pady=(0, 15))
+
+        action_frame = ttk.Frame(main_frame)
+        action_frame.grid(row=2, column=0, sticky="ew", pady=(0, 15))
+
+        log_frame = ttk.LabelFrame(main_frame, text="Nhật ký hoạt động", padding="10")
+        log_frame.grid(row=3, column=0, sticky="nsew")
+
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+
         ttk.Label(config_frame, text="Khóa DES (hex, 16 ký tự):").grid(row=0, column=0, sticky="w")
         self.key_entry = ttk.Entry(config_frame, width=30)
         self.key_entry.grid(row=0, column=1, sticky="ew", padx=5)
@@ -149,31 +161,19 @@ class DESFileTransferApp:
         self.port_entry.insert(0, str(self.port))
         self.port_entry.bind("<KeyRelease>", self.update_receive_host)
 
-        file_frame = ttk.LabelFrame(main_frame, text="File", padding="10")
-        file_frame.grid(row=1, column=0, sticky="ew", pady=(0, 15))
-
         ttk.Label(file_frame, text="File nguồn:").grid(row=0, column=0, sticky="w")
         self.file_path_entry = ttk.Entry(file_frame, width=70)
         self.file_path_entry.grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(file_frame, text="Chọn file", command=self.select_file).grid(row=0, column=2, padx=5)
         ttk.Button(file_frame, text="Mở file", command=self.open_file).grid(row=0, column=3, padx=5)
 
-        action_frame = ttk.Frame(main_frame)
-        action_frame.grid(row=2, column=0, sticky="ew", pady=(0, 15))
-
         ttk.Button(action_frame, text="Mã hóa File", command=self.encrypt_file).pack(side="left", padx=5)
         ttk.Button(action_frame, text="Gửi File", command=self.send_file).pack(side="left", padx=5)
         ttk.Button(action_frame, text="Giải mã File", command=self.decrypt_file).pack(side="left", padx=5)
         ttk.Button(action_frame, text="Mã hóa và Gửi", command=self.encrypt_and_send_file).pack(side="left", padx=5)
 
-        log_frame = ttk.LabelFrame(main_frame, text="Nhật ký hoạt động", padding="10")
-        log_frame.grid(row=3, column=0, sticky="nsew")
-
         self.log_text = scrolledtext.ScrolledText(log_frame, height=20, wrap=tk.WORD, font=('Consolas', 10))
         self.log_text.pack(fill="both", expand=True)
-
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(3, weight=1)
 
         # DES permutation tables
         self.IP = [
