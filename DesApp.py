@@ -379,8 +379,8 @@ class DESFileTransferApp:
                         self.log_message("Không thể giải mã hex thành text.")
             self.log_message(f"Đã xử lý file: {file_path}")
         except Exception as e:
-            self.log_message(f"Lỗi khi xử lý file: {str(e)}")
-            messagebox.showerror("Lỗi", f"Không thể xử lý file: {str(e)}")
+            self.log_message(f"Lỗi khi xử lý file: Key không chính xác dẫn đến không thể giải mã hex thành text")
+            messagebox.showerror("Lỗi", f"Không thể xử lý file: Key không chính xác dẫn đến không thể giải mã hex thành text")
 
     # DES Implementation
     def hex_to_bin(self, hex_str, pad=64):
