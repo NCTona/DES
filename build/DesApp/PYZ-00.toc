@@ -1,4 +1,4 @@
-('F:\\My data\\DES\\build\\DesApp\\PYZ-00.pyz',
+('F:\\My data\\New folder\\DES\\build\\DesApp\\PYZ-00.pyz',
  [('__future__',
    'C:\\Users\\NCTona\\miniconda3\\Lib\\__future__.py',
    'PYMODULE'),

@@ -7,6 +7,7 @@ import shutil
 from flask import Flask, request, send_file, abort
 import requests
 
+
 class DESFileTransferApp:
     def __init__(self, root):
         self.root = root
@@ -93,7 +94,7 @@ class DESFileTransferApp:
                         if len(file_data) % 8 != 0:
                             raise ValueError("File mã hóa không hợp lệ")
                         for i in range(0, len(file_data), 8):
-                            chunk = file_data[i:i+8]
+                            chunk = file_data[i:i + 8]
                             chunk_hex = chunk.hex().upper()
                             decrypted_hex = self.des_decrypt_block(chunk_hex, subkeys)
                             decrypted_bytes = bytes.fromhex(decrypted_hex)
@@ -122,6 +123,7 @@ class DESFileTransferApp:
     def start_server(self):
         def run_flask():
             self.flask_app.run(host='0.0.0.0', port=self.port, debug=False, use_reloader=False)
+
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
         self.log_message(f"Flask server started at {self.receive_host}")
@@ -379,8 +381,8 @@ class DESFileTransferApp:
                         self.log_message("Không thể giải mã hex thành text.")
             self.log_message(f"Đã xử lý file: {file_path}")
         except Exception as e:
-            self.log_message(f"Lỗi khi xử lý file: {str(e)}")
-            messagebox.showerror("Lỗi", f"Không thể xử lý file: {str(e)}")
+            self.log_message(f"Lỗi khi xử lý file: Key không chính xác dẫn đến không thể giải mã hex thành text")
+            messagebox.showerror("Lỗi",f"Không thể xử lý file: Key không chính xác dẫn đến không thể giải mã hex thành text")
 
     # DES Implementation
     def hex_to_bin(self, hex_str, pad=64):
@@ -524,7 +526,7 @@ class DESFileTransferApp:
                 if len(file_data) % 8 != 0:
                     raise ValueError("File mã hóa không có kích thước là bội của 8 byte")
                 for i in range(0, len(file_data), 8):
-                    chunk = file_data[i:i+8]
+                    chunk = file_data[i:i + 8]
                     chunk_hex = chunk.hex().upper()
                     decrypted_hex = self.des_decrypt_block(chunk_hex, subkeys)
                     decrypted_bytes = bytes.fromhex(decrypted_hex)
@@ -637,6 +639,7 @@ class DESFileTransferApp:
             messagebox.showerror("Lỗi", f"Không thể mã hóa và gửi file: {str(e)}")
             if os.path.exists(temp_output_file):
                 os.remove(temp_output_file)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
